@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pptx-tts-reader"
+version = "0.1.0"
+description = "Automatically reads PowerPoint presentations aloud using AI text-to-speech voices"
+readme = "README.MD"
+requires-python = ">=3.10"
+dependencies = [
+    "python-pptx>=0.6.23",
+    "pyttsx3>=2.90",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+pptx-reader = "pptx_tts.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
