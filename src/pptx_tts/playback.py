@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import logging
 import time
 
@@ -11,10 +12,25 @@ from pptx_tts.synthesizer import Synthesizer, VoiceConfig
 logger = logging.getLogger(__name__)
 
 ENDING_JOKES = [
-    "Any questions? ...Hello? Oh right, I forgot I'm just a computer program. Classic me!",
-    "And that concludes the presentation! I'd take questions, but my listening skills are... non-existent.",
-    "That's all folks! Feel free to ask questions — I'll just pretend I can hear you.",
+    "So, does everything look good? Great! Because I can't hear you — I just read off the presentation.",
+    "And that's the last slide! If you have questions, please write them on a sticky note and throw them at the screen.",
+    "Presentation complete! I'd take a bow, but I don't have a body. Or legs. Or... anything, really.",
+    "That's all folks! I'd ask for applause, but honestly, the silence is less awkward for both of us.",
+    "Any questions? Just kidding — I literally cannot process your answers. Good luck out there!",
+    "And we're done! If that didn't make sense, don't worry — I just read the words, I don't understand them either.",
+    "Thank you for listening! Or sleeping. Either way, my job here is done.",
+    "End of presentation! Fun fact: I rehearsed this zero times and still nailed it. Probably.",
+    "That concludes today's slides. Remember, if you didn't learn anything, that's a content problem, not a me problem.",
+    "And scene! I hope that was informative. If not, at least it was... audible?",
+    "Presentation over! I'd stick around for the Q and A, but I have another deck to read in five minutes.",
+    "We made it to the end! High five! Oh wait, I'm software. Air five? No air either. Never mind.",
+    "That's a wrap! If you need me to read it again, just hit F5. I'll be here. I'm always here.",
+    "All done! I hope I pronounced everything correctly. If not, blame the person who made the slides.",
+    "And that's the presentation! Now if you'll excuse me, I need to go recharge. Just kidding — I run on pure determination.",
 ]
+
+# Cycle through jokes so they rotate across presentations
+_joke_cycle = itertools.cycle(ENDING_JOKES)
 
 
 class PlaybackController:
@@ -33,6 +49,7 @@ class PlaybackController:
 
     def play_presentation(self, filepath: str) -> None:
         """Extract slides from *filepath* and read them aloud sequentially."""
+        self._stopped = False
         slides = extract_slides(filepath)
         if not slides:
             logger.warning("No slides found in %s", filepath)
@@ -46,10 +63,18 @@ class PlaybackController:
                 return
             self._read_slide(slide)
 
-        if self._tell_joke:
+        if self._tell_joke and not self._stopped:
             self._deliver_ending()
 
         logger.info("Presentation complete.")
+
+    def finish_with_joke(self) -> None:
+        """Stop current speech and deliver an ending joke after a short pause."""
+        self._stopped = True
+        self._synth.stop()
+        if self._tell_joke:
+            time.sleep(1.0)
+            self._deliver_ending()
 
     def _read_slide(self, slide: SlideContent) -> None:
         """Read a single slide, then pause before advancing."""
@@ -65,10 +90,8 @@ class PlaybackController:
             time.sleep(self._slide_delay)
 
     def _deliver_ending(self) -> None:
-        """Tell a joke at the end of the presentation."""
-        import random
-
-        joke = random.choice(ENDING_JOKES)
+        """Tell the next joke in rotation."""
+        joke = next(_joke_cycle)
         logger.info("Ending: %s", joke)
         self._synth.speak(joke)
 

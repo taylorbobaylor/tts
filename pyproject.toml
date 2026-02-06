@@ -12,6 +12,7 @@ dependencies = [
     "python-pptx>=0.6.23",
     "pyttsx3>=2.90",
     "psutil>=5.9",
+    "pywin32>=306",
 ]
 
 [project.optional-dependencies]

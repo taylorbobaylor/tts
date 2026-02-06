@@ -42,7 +42,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # --- watch: background mode — detect PowerPoint and read automatically ---
     watch_p = sub.add_parser(
-        "watch", help="Run in the background and auto-read when PowerPoint opens a file"
+        "watch", help="Run in the background and auto-read when PowerPoint enters slideshow mode"
     )
     watch_p.add_argument(
         "--poll",
@@ -83,7 +83,10 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     signal.signal(signal.SIGINT, _on_sigint)
     signal.signal(signal.SIGTERM, _on_sigint)
 
-    detector.watch(on_file_opened=ctrl.play_presentation)
+    detector.watch(
+        on_slideshow_started=ctrl.play_presentation,
+        on_slideshow_ended=ctrl.finish_with_joke,
+    )
 
 
 def _cmd_voices(_args: argparse.Namespace) -> None:
