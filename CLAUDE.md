@@ -2,44 +2,69 @@
 
 ## Project Overview
 
-This is a **PowerPoint Text-to-Speech Auto-Reader** — an automation tool that reads PowerPoint presentations aloud using AI text-to-speech voices. It runs as a background service, detects when PowerPoint is opened, extracts slide text, synthesizes speech, and auto-advances slides.
-
-**Status**: Early planning/initialization phase. No implementation code exists yet — only a README describing the project vision.
+A Python tool that reads PowerPoint presentations aloud using offline AI text-to-speech. It can read a single `.pptx` file on demand, or run as a background watcher that auto-detects when PowerPoint opens a file.
 
 ## Repository Structure
 
 ```
 tts/
-├── README.MD          # Project description, features, and architecture overview
-└── CLAUDE.md          # This file
+├── src/pptx_tts/          # Main package
+│   ├── __init__.py
+│   ├── main.py             # CLI entry point (argparse)
+│   ├── extractor.py        # Slide text extraction via python-pptx
+│   ├── synthesizer.py      # TTS wrapper around pyttsx3
+│   ├── playback.py         # Orchestrates reading a full presentation
+│   └── detector.py         # Polls for PowerPoint/LibreOffice processes
+├── tests/
+│   ├── test_extractor.py   # Extraction + SlideContent tests
+│   ├── test_playback.py    # Playback controller tests (mocked TTS)
+│   └── test_detector.py    # Detector + process scanning tests
+├── pyproject.toml           # Build config, deps, CLI entry point
+├── .gitignore
+├── README.MD
+└── CLAUDE.md
 ```
 
-## Planned Architecture (from README)
+## Quick Reference
 
-The system is designed around five modules:
+```bash
+# Install (editable, with dev deps)
+pip install -e ".[dev]"
 
-1. **Detection** — Monitor for PowerPoint application launches
-2. **Content Extraction** — Read text from slides via PowerPoint API
-3. **Voice Synthesis** — Convert text to speech using AI voice models
-4. **Playback Control** — Manage audio playback and slide timing
-5. **Navigation** — Auto-advance slides (1.5s delay after each slide completes)
+# Read a presentation aloud
+pptx-reader read slides.pptx
+pptx-reader read slides.pptx --rate 200 --delay 2.0 --no-joke
 
-## Development Setup
+# Watch for PowerPoint and auto-read
+pptx-reader watch
 
-No build system, dependency manager, or tooling has been configured yet. When implementation begins, these will need to be set up based on the chosen language/framework.
+# List available TTS voices
+pptx-reader voices
 
-## Key Decisions Still Needed
+# Run tests
+pytest
+```
 
-- **Language**: Not yet chosen (Python is a likely candidate given TTS library availability)
-- **TTS engine**: README mentions "high-quality, free AI text-to-speech voices" — specific engine TBD
-- **PowerPoint integration**: COM automation (Windows), python-pptx, or similar
-- **Service model**: How the background service runs (systemd, Windows service, tray app, etc.)
-- **Dependency management**: pip/poetry/uv for Python, npm for Node, etc.
+## Architecture
 
-## Conventions for AI Assistants
+| Module | Responsibility |
+|--------|---------------|
+| `extractor.py` | Parses `.pptx` files with `python-pptx`, returns `SlideContent` dataclasses |
+| `synthesizer.py` | Wraps `pyttsx3` engine — `speak()`, `stop()`, voice config |
+| `playback.py` | Loops over slides, calls synthesizer, handles inter-slide delay and ending joke |
+| `detector.py` | Polls `psutil.process_iter` for PowerPoint/LibreOffice, extracts `.pptx` from cmdline |
+| `main.py` | CLI with subcommands: `read`, `watch`, `voices` |
 
-- The README.MD contains the authoritative project vision and feature set
-- No tests, linting, CI/CD, or formatting tools exist yet — set these up when adding code
-- No `.gitignore` exists — create one appropriate for the chosen language when adding code
+## Dependencies
+
+- **python-pptx** — Read `.pptx` slide content
+- **pyttsx3** — Offline text-to-speech (no API keys needed)
+- **psutil** — Cross-platform process monitoring
+- **pytest / pytest-cov** — Testing (dev)
+
+## Conventions
+
 - Commit messages should be clear and descriptive
-- The project has a lighthearted personality (ending joke feature) — maintain that tone in user-facing strings
+- The project has a lighthearted personality — the ending joke is part of the design; maintain that tone in user-facing strings
+- Tests mock the TTS engine (`pyttsx3`) so they run silently and fast
+- `README.MD` contains the user-facing project description
