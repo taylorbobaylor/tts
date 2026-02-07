@@ -57,7 +57,7 @@ class TestPowerPointDetector:
                 detector.stop()
 
         with patch("pptx_tts.detector.time.sleep", side_effect=fake_sleep), \
-             patch("pptx_tts.detector._find_powerpoint_pptx", return_value="C:\\test.pptx"), \
+             patch("pptx_tts.detector._find_powerpoint_pptx", return_value="/tmp/test.pptx"), \
              patch("pptx_tts.detector._is_slideshow_active", return_value=False):
             detector.watch(started_cb, ended_cb)
 
@@ -74,11 +74,11 @@ class TestPowerPointDetector:
             detector.stop()
 
         with patch("pptx_tts.detector.time.sleep", side_effect=fake_sleep), \
-             patch("pptx_tts.detector._find_powerpoint_pptx", return_value="C:\\deck.pptx"), \
+             patch("pptx_tts.detector._find_powerpoint_pptx", return_value="/tmp/deck.pptx"), \
              patch("pptx_tts.detector._is_slideshow_active", return_value=True):
             detector.watch(started_cb, ended_cb)
 
-        started_cb.assert_called_once_with("C:\\deck.pptx")
+        started_cb.assert_called_once_with("/tmp/deck.pptx")
         ended_cb.assert_not_called()
 
     def test_ended_callback_fires_when_slideshow_ends(self):
@@ -102,9 +102,63 @@ class TestPowerPointDetector:
             return False
 
         with patch("pptx_tts.detector.time.sleep", side_effect=fake_sleep), \
-             patch("pptx_tts.detector._find_powerpoint_pptx", return_value="C:\\deck.pptx"), \
+             patch("pptx_tts.detector._find_powerpoint_pptx", return_value="/tmp/deck.pptx"), \
              patch("pptx_tts.detector._is_slideshow_active", side_effect=slideshow_active):
             detector.watch(started_cb, ended_cb)
 
-        started_cb.assert_called_once_with("C:\\deck.pptx")
+        started_cb.assert_called_once_with("/tmp/deck.pptx")
         ended_cb.assert_called_once()
+
+
+class TestMacOSHelpers:
+    """Test macOS-specific detection logic with mocked subprocess calls."""
+
+    @patch("pptx_tts.detector._applescript")
+    def test_mac_slideshow_active(self, mock_as):
+        from pptx_tts.detector import _mac_is_slideshow_active
+
+        # PowerPoint running + slideshow running
+        mock_as.side_effect = ["true", "true"]
+        assert _mac_is_slideshow_active() is True
+
+    @patch("pptx_tts.detector._applescript")
+    def test_mac_slideshow_not_active(self, mock_as):
+        from pptx_tts.detector import _mac_is_slideshow_active
+
+        # PowerPoint running, slideshow NOT running
+        mock_as.side_effect = ["true", "false"]
+        assert _mac_is_slideshow_active() is False
+
+    @patch("pptx_tts.detector._applescript")
+    def test_mac_powerpoint_not_running(self, mock_as):
+        from pptx_tts.detector import _mac_is_slideshow_active
+
+        mock_as.return_value = "false"
+        assert _mac_is_slideshow_active() is False
+
+    @patch("pptx_tts.detector._applescript")
+    @patch("pptx_tts.detector.psutil.process_iter")
+    def test_mac_find_pptx_via_applescript(self, mock_procs, mock_as, tmp_path):
+        from pptx_tts.detector import _mac_find_powerpoint_pptx
+
+        pptx = tmp_path / "slides.pptx"
+        pptx.write_bytes(b"fake")
+
+        # Simulate PowerPoint process in psutil
+        proc = MagicMock()
+        proc.info = {"name": "Microsoft PowerPoint"}
+        mock_procs.return_value = [proc]
+
+        mock_as.return_value = str(pptx)
+        assert _mac_find_powerpoint_pptx() == str(pptx)
+
+    @patch("pptx_tts.detector.psutil.process_iter")
+    def test_mac_find_pptx_not_running(self, mock_procs):
+        from pptx_tts.detector import _mac_find_powerpoint_pptx
+
+        # No PowerPoint process
+        proc = MagicMock()
+        proc.info = {"name": "Safari"}
+        mock_procs.return_value = [proc]
+
+        assert _mac_find_powerpoint_pptx() is None
