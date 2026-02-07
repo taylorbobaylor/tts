@@ -1,4 +1,4 @@
-"""Tests for the PowerPoint detector module."""
+"""Tests for the PowerPoint/LibreOffice detector module."""
 
 from unittest.mock import MagicMock, patch
 
@@ -156,9 +156,99 @@ class TestMacOSHelpers:
     def test_mac_find_pptx_not_running(self, mock_procs):
         from pptx_tts.detector import _mac_find_powerpoint_pptx
 
-        # No PowerPoint process
+        # No PowerPoint process and no LibreOffice
         proc = MagicMock()
         proc.info = {"name": "Safari"}
+        proc.cmdline.return_value = ["Safari"]
         mock_procs.return_value = [proc]
 
         assert _mac_find_powerpoint_pptx() is None
+
+
+class TestLibreOfficeDetection:
+    """Test LibreOffice-specific detection across platforms."""
+
+    @patch("pptx_tts.detector.psutil.process_iter")
+    def test_mac_find_libreoffice_pptx(self, mock_procs, tmp_path):
+        from pptx_tts.detector import _mac_find_libreoffice_pptx
+
+        pptx = tmp_path / "slides.pptx"
+        pptx.write_bytes(b"fake")
+
+        proc = MagicMock()
+        proc.info = {"name": "soffice"}
+        proc.cmdline.return_value = ["soffice", "--impress", str(pptx)]
+        mock_procs.return_value = [proc]
+
+        assert _mac_find_libreoffice_pptx() == str(pptx)
+
+    @patch("pptx_tts.detector.psutil.process_iter")
+    def test_mac_find_libreoffice_no_pptx(self, mock_procs):
+        from pptx_tts.detector import _mac_find_libreoffice_pptx
+
+        proc = MagicMock()
+        proc.info = {"name": "soffice"}
+        proc.cmdline.return_value = ["soffice", "--calc", "budget.xlsx"]
+        mock_procs.return_value = [proc]
+
+        assert _mac_find_libreoffice_pptx() is None
+
+    @patch("pptx_tts.detector.psutil.process_iter")
+    def test_mac_falls_back_to_libreoffice(self, mock_procs, tmp_path):
+        """When PowerPoint is not running, _mac_find_powerpoint_pptx falls back to LibreOffice."""
+        from pptx_tts.detector import _mac_find_powerpoint_pptx
+
+        pptx = tmp_path / "deck.pptx"
+        pptx.write_bytes(b"fake")
+
+        # soffice process with a .pptx, no PowerPoint
+        proc = MagicMock()
+        proc.info = {"name": "soffice"}
+        proc.cmdline.return_value = ["soffice", str(pptx)]
+        mock_procs.return_value = [proc]
+
+        assert _mac_find_powerpoint_pptx() == str(pptx)
+
+    @patch("pptx_tts.detector._applescript")
+    @patch("pptx_tts.detector._mac_find_libreoffice_pptx")
+    def test_mac_slideshow_active_via_libreoffice(self, mock_libre, mock_as):
+        from pptx_tts.detector import _mac_is_slideshow_active
+
+        # PowerPoint not running, but LibreOffice has a .pptx
+        mock_as.return_value = "false"
+        mock_libre.return_value = "/tmp/slides.pptx"
+        assert _mac_is_slideshow_active() is True
+
+    @patch("pptx_tts.detector._applescript")
+    @patch("pptx_tts.detector._mac_find_libreoffice_pptx")
+    def test_mac_slideshow_not_active_nothing_open(self, mock_libre, mock_as):
+        from pptx_tts.detector import _mac_is_slideshow_active
+
+        mock_as.return_value = "false"
+        mock_libre.return_value = None
+        assert _mac_is_slideshow_active() is False
+
+    @patch("pptx_tts.detector.psutil.process_iter")
+    def test_linux_find_pptx(self, mock_procs, tmp_path):
+        from pptx_tts.detector import _linux_find_pptx
+
+        pptx = tmp_path / "talk.pptx"
+        pptx.write_bytes(b"fake")
+
+        proc = MagicMock()
+        proc.info = {"name": "soffice.bin"}
+        proc.cmdline.return_value = ["soffice.bin", "--impress", str(pptx)]
+        mock_procs.return_value = [proc]
+
+        assert _linux_find_pptx() == str(pptx)
+
+    @patch("pptx_tts.detector.psutil.process_iter")
+    def test_linux_find_pptx_not_running(self, mock_procs):
+        from pptx_tts.detector import _linux_find_pptx
+
+        proc = MagicMock()
+        proc.info = {"name": "firefox"}
+        proc.cmdline.return_value = ["firefox"]
+        mock_procs.return_value = [proc]
+
+        assert _linux_find_pptx() is None
