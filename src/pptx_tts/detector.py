@@ -8,6 +8,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Callable
+from urllib.parse import unquote, urlparse
 
 import psutil
 
@@ -46,7 +47,7 @@ def _win_is_libreoffice_presenting() -> bool:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
         if name in _WIN_LIBRE_PROCESS_NAMES:
-            if _find_pptx_in_cmdline(proc):
+            if _find_pptx_in_cmdline(proc) or _find_pptx_in_open_files(proc):
                 return True
     return False
 
@@ -61,7 +62,7 @@ def _win_find_powerpoint_pptx() -> str | None:
             continue
         if name not in target_names:
             continue
-        pptx_path = _find_pptx_in_cmdline(proc)
+        pptx_path = _find_pptx_in_cmdline(proc) or _find_pptx_in_open_files(proc)
         if pptx_path:
             return pptx_path
     return None
@@ -153,7 +154,7 @@ def _mac_find_libreoffice_pptx() -> str | None:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
         if name in _MAC_LIBRE_PROCESS_NAMES:
-            pptx_path = _find_pptx_in_cmdline(proc)
+            pptx_path = _find_pptx_in_cmdline(proc) or _find_pptx_in_open_files(proc)
             if pptx_path:
                 return pptx_path
     return None
@@ -164,12 +165,37 @@ def _mac_find_libreoffice_pptx() -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _uri_to_path(arg: str) -> str:
+    """Convert a file:// URI to a local path, or return the argument as-is."""
+    if arg.lower().startswith("file://"):
+        return unquote(urlparse(arg).path)
+    return arg
+
+
 def _find_pptx_in_cmdline(proc: psutil.Process) -> str | None:
     """Try to extract a .pptx file path from a process's command line."""
     try:
         for arg in proc.cmdline():
-            if arg.lower().endswith(".pptx") and Path(arg).is_file():
-                return arg
+            if not arg.lower().endswith(".pptx"):
+                continue
+            resolved = _uri_to_path(arg)
+            if Path(resolved).is_file():
+                return resolved
+    except (psutil.AccessDenied, psutil.NoSuchProcess):
+        pass
+    return None
+
+
+def _find_pptx_in_open_files(proc: psutil.Process) -> str | None:
+    """Check a process's open file descriptors for .pptx files.
+
+    This catches files opened via IPC / GUI when the path is not on the
+    command line (e.g. LibreOffice was already running).
+    """
+    try:
+        for f in proc.open_files():
+            if f.path.lower().endswith(".pptx"):
+                return f.path
     except (psutil.AccessDenied, psutil.NoSuchProcess):
         pass
     return None
@@ -186,7 +212,7 @@ def _linux_find_pptx() -> str | None:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
         if name in _LINUX_LIBRE_PROCESS_NAMES:
-            pptx_path = _find_pptx_in_cmdline(proc)
+            pptx_path = _find_pptx_in_cmdline(proc) or _find_pptx_in_open_files(proc)
             if pptx_path:
                 return pptx_path
     return None

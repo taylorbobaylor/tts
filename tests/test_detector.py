@@ -2,7 +2,23 @@
 
 from unittest.mock import MagicMock, patch
 
-from pptx_tts.detector import PowerPointDetector, _find_pptx_in_cmdline
+from pptx_tts.detector import (
+    PowerPointDetector,
+    _find_pptx_in_cmdline,
+    _find_pptx_in_open_files,
+    _uri_to_path,
+)
+
+
+class TestUriToPath:
+    def test_file_uri_converted(self):
+        assert _uri_to_path("file:///home/user/slides.pptx") == "/home/user/slides.pptx"
+
+    def test_file_uri_with_spaces(self):
+        assert _uri_to_path("file:///home/user/my%20slides.pptx") == "/home/user/my slides.pptx"
+
+    def test_plain_path_unchanged(self):
+        assert _uri_to_path("/home/user/slides.pptx") == "/home/user/slides.pptx"
 
 
 class TestFindPptxInCmdline:
@@ -11,6 +27,21 @@ class TestFindPptxInCmdline:
         pptx.write_bytes(b"fake")
         proc = MagicMock()
         proc.cmdline.return_value = ["powerpnt.exe", str(pptx)]
+        assert _find_pptx_in_cmdline(proc) == str(pptx)
+
+    def test_finds_pptx_from_file_uri(self, tmp_path):
+        pptx = tmp_path / "deck.pptx"
+        pptx.write_bytes(b"fake")
+        proc = MagicMock()
+        proc.cmdline.return_value = ["soffice", "--impress", f"file://{pptx}"]
+        assert _find_pptx_in_cmdline(proc) == str(pptx)
+
+    def test_finds_pptx_from_file_uri_with_encoded_spaces(self, tmp_path):
+        pptx = tmp_path / "my deck.pptx"
+        pptx.write_bytes(b"fake")
+        proc = MagicMock()
+        uri = f"file://{str(pptx).replace(' ', '%20')}"
+        proc.cmdline.return_value = ["soffice", uri]
         assert _find_pptx_in_cmdline(proc) == str(pptx)
 
     def test_returns_none_when_no_pptx(self):
@@ -24,6 +55,31 @@ class TestFindPptxInCmdline:
         proc = MagicMock()
         proc.cmdline.side_effect = psutil.AccessDenied(pid=1)
         assert _find_pptx_in_cmdline(proc) is None
+
+
+class TestFindPptxInOpenFiles:
+    def test_finds_pptx_in_open_files(self, tmp_path):
+        pptx = tmp_path / "open.pptx"
+        pptx.write_bytes(b"fake")
+        proc = MagicMock()
+        ofile = MagicMock()
+        ofile.path = str(pptx)
+        proc.open_files.return_value = [ofile]
+        assert _find_pptx_in_open_files(proc) == str(pptx)
+
+    def test_ignores_non_pptx_files(self):
+        proc = MagicMock()
+        ofile = MagicMock()
+        ofile.path = "/tmp/budget.xlsx"
+        proc.open_files.return_value = [ofile]
+        assert _find_pptx_in_open_files(proc) is None
+
+    def test_returns_none_on_access_denied(self):
+        import psutil
+
+        proc = MagicMock()
+        proc.open_files.side_effect = psutil.AccessDenied(pid=1)
+        assert _find_pptx_in_open_files(proc) is None
 
 
 class TestPowerPointDetector:
@@ -252,3 +308,36 @@ class TestLibreOfficeDetection:
         mock_procs.return_value = [proc]
 
         assert _linux_find_pptx() is None
+
+    @patch("pptx_tts.detector.psutil.process_iter")
+    def test_linux_find_pptx_via_file_uri(self, mock_procs, tmp_path):
+        from pptx_tts.detector import _linux_find_pptx
+
+        pptx = tmp_path / "talk.pptx"
+        pptx.write_bytes(b"fake")
+
+        proc = MagicMock()
+        proc.info = {"name": "soffice.bin"}
+        proc.cmdline.return_value = ["soffice.bin", "--impress", f"file://{pptx}"]
+        proc.open_files.return_value = []
+        mock_procs.return_value = [proc]
+
+        assert _linux_find_pptx() == str(pptx)
+
+    @patch("pptx_tts.detector.psutil.process_iter")
+    def test_linux_find_pptx_via_open_files(self, mock_procs, tmp_path):
+        """Detect .pptx when opened via GUI/IPC (not in cmdline)."""
+        from pptx_tts.detector import _linux_find_pptx
+
+        pptx = tmp_path / "talk.pptx"
+        pptx.write_bytes(b"fake")
+
+        proc = MagicMock()
+        proc.info = {"name": "soffice.bin"}
+        proc.cmdline.return_value = ["soffice.bin"]  # no .pptx in cmdline
+        ofile = MagicMock()
+        ofile.path = str(pptx)
+        proc.open_files.return_value = [ofile]
+        mock_procs.return_value = [proc]
+
+        assert _linux_find_pptx() == str(pptx)
